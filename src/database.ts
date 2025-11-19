@@ -124,6 +124,11 @@ export class DatabaseConnection {
         undefined: null, // Transform undefined values to null for PostgreSQL compatibility
       },
       fetch_types: fetchTypes ?? true,
+      connection: this.config.defaultSchema
+        ? {
+            search_path: `${this.config.defaultSchema},public`
+          }
+        : undefined,
     };
 
     // Configure SSL/TLS based on configuration
@@ -209,6 +214,8 @@ export class DatabaseConnection {
       tlsEnabled: Boolean(connectionOptions.ssl),
       sslRejectUnauthorized: sslLogging?.rejectUnauthorized,
       fetchTypes: connectionOptions.fetch_types,
+      defaultSchema: this.config.defaultSchema,
+      searchPath: connectionOptions.connection,
     });
   }
 
@@ -243,6 +250,7 @@ export class DatabaseConnection {
       this.logger.debug("Executing query", {
         queryLength: query.length,
         preview: query.substring(0, 100),
+        defaultSchema: this.config.defaultSchema,
       });
 
       const startTime = Date.now();
@@ -270,20 +278,42 @@ export class DatabaseConnection {
    * Get list of all user-defined tables in the database
    *
    * Excludes system schemas (pg_catalog, information_schema)
+   * If defaultSchema is configured, only returns tables from that schema
    * @returns Array of table information objects
    * @throws PostgresError if table retrieval fails
    */
   async getTables(): Promise<TableInfo[]> {
     try {
-      const tables = await this.sql<TableInfo[]>`
-        SELECT table_schema, table_name
-        FROM information_schema.tables
-        WHERE table_type = 'BASE TABLE'
-          AND table_schema NOT IN ('pg_catalog', 'information_schema')
-        ORDER BY table_schema, table_name
-      `;
+      let query;
+      if (this.config.defaultSchema) {
+        // If default schema is configured, only return tables from that schema
+        query = this.sql<TableInfo[]>`
+          SELECT table_schema, table_name
+          FROM information_schema.tables
+          WHERE table_type = 'BASE TABLE'
+            AND table_schema = ${this.config.defaultSchema}
+          ORDER BY table_name
+        `;
+        this.logger.debug("Retrieving tables from default schema", {
+          schema: this.config.defaultSchema
+        });
+      } else {
+        // Return tables from all non-system schemas
+        query = this.sql<TableInfo[]>`
+          SELECT table_schema, table_name
+          FROM information_schema.tables
+          WHERE table_type = 'BASE TABLE'
+            AND table_schema NOT IN ('pg_catalog', 'information_schema')
+          ORDER BY table_schema, table_name
+        `;
+      }
 
-      this.logger.debug("Retrieved table list", { count: tables.length });
+      const tables = await query;
+
+      this.logger.debug("Retrieved table list", {
+        count: tables.length,
+        defaultSchema: this.config.defaultSchema
+      });
       return tables;
     } catch (error) {
       this.logger.error("Failed to retrieve tables", error);
@@ -361,6 +391,53 @@ export class DatabaseConnection {
         `Failed to retrieve details for table ${schema}.${table}`,
         code,
         detail
+      );
+    }
+  }
+
+  /**
+   * Parse table name with optional schema, using default schema if not provided
+   *
+   * @param tableInput - Table input, can be "table_name" or "schema.table_name"
+   * @returns Object with schema and table name
+   */
+  parseTableName(tableInput: string): { schema: string; table: string } {
+    if (!tableInput) {
+      throw new PostgresError("Table name cannot be empty");
+    }
+
+    const parts = tableInput.split('.');
+    if (parts.length === 1) {
+      // No schema provided, use default schema
+      const table = parts[0]?.trim();
+      if (!table) {
+        throw new PostgresError("Table name cannot be empty");
+      }
+
+      if (!this.config.defaultSchema) {
+        throw new PostgresError(
+          "No schema specified and no default schema configured. " +
+          "Please specify schema as 'schema.table_name' or set PG_DEFAULT_SCHEMA environment variable."
+        );
+      }
+
+      return {
+        schema: this.config.defaultSchema,
+        table
+      };
+    } else if (parts.length === 2) {
+      // Schema and table provided
+      const schema = parts[0]?.trim();
+      const table = parts[1]?.trim();
+
+      if (!schema || !table) {
+        throw new PostgresError("Schema and table name cannot be empty");
+      }
+
+      return { schema, table };
+    } else {
+      throw new PostgresError(
+        "Invalid table format. Use 'table_name' or 'schema.table_name'"
       );
     }
   }

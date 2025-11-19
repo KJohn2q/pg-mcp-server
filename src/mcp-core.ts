@@ -110,7 +110,7 @@ export function createPostgresMcpServer(transportKind: TransportKind = "stdio"):
     }
   );
 
-  // Register table detail resource
+  // Register table detail resource (with schema)
   server.registerResource(
     "table",
     new ResourceTemplate("postgres://table/{schema}/{table}", {
@@ -139,6 +139,56 @@ export function createPostgresMcpServer(transportKind: TransportKind = "stdio"):
         if (!schema || !table) {
           throw new Error("Schema and table parameters are required");
         }
+        const tableDetails = await db.getTableDetails(schema, table);
+        return {
+          contents: [
+            { uri: uri.href, text: JSON.stringify(tableDetails, null, 2) },
+          ],
+        };
+      } catch (error) {
+        logger.error("Table detail resource error", error);
+        const errorMessage =
+          error instanceof Error ? error.message : "Failed to retrieve table details";
+        return {
+          contents: [
+            { uri: uri.href, text: JSON.stringify({ error: errorMessage }, null, 2) },
+          ],
+        };
+      }
+    }
+  );
+
+  // Register simple table resource (supports default schema)
+  server.registerResource(
+    "table-simple",
+    new ResourceTemplate("postgres://table/{table}", {
+      // Expose each table as a discoverable MCP resource
+      async list() {
+        const tables = await db.getTables();
+        return {
+          resources: tables.map((t) => ({
+            uri: `postgres://table/${encodeURIComponent(t.table_name)}`,
+            name: t.table_name,
+            description: `Schema and sample rows for ${t.table_name}${config.defaultSchema ? ` (in ${config.defaultSchema} schema)` : ''}`,
+            mimeType: "application/json",
+          })),
+        };
+      },
+    }),
+    {
+      title: "PostgreSQL Table Details (Simple)",
+      description: "Get schema information and sample rows for a table. Uses default schema if configured.",
+      mimeType: "application/json",
+    },
+    async (uri, rawArgs) => {
+      try {
+        const tableInput = String(rawArgs?.table ?? "");
+        if (!tableInput) {
+          throw new Error("Table parameter is required");
+        }
+
+        // Parse table name with optional schema support
+        const { schema, table } = db.parseTableName(tableInput);
         const tableDetails = await db.getTableDetails(schema, table);
         return {
           contents: [

@@ -1,7 +1,7 @@
 {
-  "name": "pg-mcp-server",
-  "version": "0.3.0",
-  "description": "A Model Context Protocol server for PostgreSQL databases",
+  "name": "pg-mcp-server-with-defaultschema",
+  "version": "0.1.0",
+  "description": "A Model Context Protocol server for PostgreSQL databases With defaultSchema",
   "module": "index.ts",
   "type": "module",
   "private": false,
@@ -21,12 +21,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/ericzakariasson/pg-mcp-server.git"
+    "url": "https://github.com/KJohn2q/pg-mcp-server"
   },
   "license": "MIT",
   "scripts": {
     "dev": "tsc -w -p tsconfig.build.json",
-    "inspector:stdio": "DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres npx @modelcontextprotocol/inspector bun run index.ts --transport=stdio",
+    "inspector:stdio": "DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres?currentSchema=public npx @modelcontextprotocol/inspector bun run index.ts --transport=stdio",
     "inspector:http": "DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres npx @modelcontextprotocol/inspector bun run index.ts --transport=http",
     "build:js": "tsc -p tsconfig.build.json",
     "prepublishOnly": "bun run typecheck && bun test && bun run build:js",
