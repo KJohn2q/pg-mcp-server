@@ -1,5 +1,5 @@
 {
-  "name": "pg-mcp-server-with-defaultschema",
+  "name": "pg-mcp-server-defaultschema",
   "version": "0.1.0",
   "description": "A Model Context Protocol server for PostgreSQL databases With defaultSchema",
   "module": "index.ts",
